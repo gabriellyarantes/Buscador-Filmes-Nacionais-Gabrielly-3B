@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#080808">
+  <meta name="description" content="Assistente de pesquisa sobre filmes nacionais brasileiros, com consultas ao DuckDuckGo.">
+  <title>Cinema BR — Assistente de Filmes Brasileiros</title>
+  <link rel="stylesheet" href="filmes-brasileiros.css">
+</head>
+<body>
+  <main class="app">
+    <header class="topo">
+      <a class="marca" href="#inicio" aria-label="Cinema BR, início">
+        <span class="marca-icone" aria-hidden="true">BR</span>
+        <span>CINEMA <strong>BR</strong></span>
+      </a>
+      <span class="status"><span class="status-ponto"></span> ASSISTENTE DE PESQUISA</span>
+    </header>
+
+    <section class="hero" id="inicio">
+      <p class="sobretitulo">UMA JANELA PARA O NOSSO CINEMA</p>
+      <h1>Filmes brasileiros.<br><span>Boas histórias.</span></h1>
+      <p class="introducao">Pergunte sobre qualquer filme nacional: enredo, elenco, direção, contexto, curiosidades e onde pesquisar mais.</p>
+
+      <form id="formulario" class="busca" autocomplete="off">
+        <label class="sr-only" for="pergunta">Faça uma pergunta sobre cinema brasileiro</label>
+        <textarea id="pergunta" name="pergunta" rows="2" maxlength="500" placeholder="Ex.: Qual é a história de Central do Brasil?" required></textarea>
+        <div class="busca-rodape">
+          <span class="dica">Enter para pesquisar · Shift + Enter para nova linha</span>
+          <button id="enviar" type="submit"><span>Pesquisar</span><span aria-hidden="true">↗</span></button>
+        </div>
+      </form>
+
+      <div class="sugestoes" aria-label="Perguntas sugeridas">
+        <span>EXPERIMENTE</span>
+        <button type="button" class="sugestao">Quem dirigiu Cidade de Deus?</button>
+        <button type="button" class="sugestao">Filmes brasileiros premiados em Cannes</button>
+        <button type="button" class="sugestao">Do que trata O Auto da Compadecida?</button>
+      </div>
+    </section>
+
+    <section id="resposta" class="resposta" aria-live="polite" aria-busy="false" hidden>
+      <div class="resposta-cabecalho">
+        <span class="etiqueta">RESULTADO DA PESQUISA</span>
+        <button id="limpar" class="limpar" type="button">Nova pergunta</button>
+      </div>
+      <h2 id="pergunta-exibida"></h2>
+      <div id="conteudo-resposta" class="conteudo-resposta"></div>
+      <div id="fontes" class="fontes"></div>
+      <p class="nota">As respostas vêm da API de respostas instantâneas do DuckDuckGo. Para perguntas sem resultado instantâneo, use a busca completa nos links acima.</p>
+    </section>
+
+    <footer class="rodape">
+      <span>FEITO PARA QUEM AMA O CINEMA BRASILEIRO</span>
+      <span>CONSULTAS VIA DUCKDUCKGO</span>
+    </footer>
+  </main>
+
+  <script>
+    const form = document.getElementById('formulario');
+    const campo = document.getElementById('pergunta');
+    const botaoEnviar = document.getElementById('enviar');
+    const areaResposta = document.getElementById('resposta');
+    const perguntaExibida = document.getElementById('pergunta-exibida');
+    const conteudoResposta = document.getElementById('conteudo-resposta');
+    const fontes = document.getElementById('fontes');
+    const botaoLimpar = document.getElementById('limpar');
+
+    function adicionarTextoComoParagrafo(container, texto) {
+      if (!texto) return;
+      const p = document.createElement('p');
+      p.textContent = texto;
+      container.appendChild(p);
+    }
+
+    function recolherTopicos(topicos, lista = []) {
+      for (const topico of topicos || []) {
+        if (topico.Text && topico.FirstURL) {
+          lista.push({ texto: topico.Text, url: topico.FirstURL });
+        }
+        if (topico.Topics) recolherTopicos(topico.Topics, lista);
+      }
+      return lista;
+    }
+
+    function criarLink(texto, url, classe = '') {
+      const link = document.createElement('a');
+      link.href = url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = texto;
+      if (classe) link.className = classe;
+      return link;
+    }
+
+    function mostrarBuscaCompleta(pergunta) {
+      const termo = `${pergunta} filme brasileiro cinema nacional`;
+      const url = `https://duckduckgo.com/?q=${encodeURIComponent(termo)}`;
+      const p = document.createElement('p');
+      p.textContent = 'A API de respostas instantâneas não retornou uma resposta direta para esta pergunta. Abra a busca completa do DuckDuckGo para consultar páginas e fontes relacionadas:';
+      conteudoResposta.appendChild(p);
+      const link = criarLink('Buscar na web com DuckDuckGo ↗', url, 'link-busca');
+      fontes.appendChild(link);
+    }
+
+    async function pesquisar(pergunta) {
+      areaResposta.hidden = false;
+      areaResposta.setAttribute('aria-busy', 'true');
+      perguntaExibida.textContent = pergunta;
+      conteudoResposta.replaceChildren();
+      fontes.replaceChildren();
+      botaoEnviar.disabled = true;
+      botaoEnviar.querySelector('span:first-child').textContent = 'Pesquisando…';
+      areaResposta.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+      const consulta = `${pergunta} filme brasileiro cinema nacional`;
+      const endpoint = `https://api.duckduckgo.com/?q=${encodeURIComponent(consulta)}&format=json&no_html=1&skip_disambig=1`;
+
+      try {
+        const resposta = await fetch(endpoint, { headers: { 'Accept': 'application/json' } });
+        if (!resposta.ok) throw new Error('A API não respondeu.');
+        const dados = await resposta.json();
+        const temConteudo = Boolean(dados.AbstractText || dados.Answer || (dados.RelatedTopics && dados.RelatedTopics.length));
+
+        if (dados.AbstractText) {
+          adicionarTextoComoParagrafo(conteudoResposta, dados.AbstractText);
+          if (dados.AbstractSource && dados.AbstractURL) {
+            fontes.appendChild(criarLink(`Fonte: ${dados.AbstractSource} ↗`, dados.AbstractURL));
+          }
+        }
+        if (dados.Answer && dados.Answer !== dados.AbstractText) {
+          adicionarTextoComoParagrafo(conteudoResposta, dados.Answer);
+        }
+
+        const topicos = recolherTopicos(dados.RelatedTopics).slice(0, 5);
+        if (topicos.length) {
+          const titulo = document.createElement('h3');
+          titulo.textContent = dados.AbstractText || dados.Answer ? 'Tópicos relacionados' : 'Resultados relacionados';
+          conteudoResposta.appendChild(titulo);
+          const lista = document.createElement('ul');
+          topicos.forEach(item => {
+            const li = document.createElement('li');
+            li.appendChild(criarLink(item.texto, item.url));
+            lista.appendChild(li);
+          });
+          conteudoResposta.appendChild(lista);
+        }
+
+        if (!temConteudo) mostrarBuscaCompleta(pergunta);
+        const buscaLink = criarLink('Ver mais resultados no DuckDuckGo ↗', `https://duckduckgo.com/?q=${encodeURIComponent(consulta)}`);
+        fontes.appendChild(buscaLink);
+      } catch (erro) {
+        mostrarBuscaCompleta(pergunta);
+        const aviso = document.createElement('p');
+        aviso.className = 'aviso';
+        aviso.textContent = 'Não foi possível carregar uma resposta instantânea agora. Você ainda pode abrir a busca completa no DuckDuckGo.';
+        conteudoResposta.prepend(aviso);
+      } finally {
+        areaResposta.setAttribute('aria-busy', 'false');
+        botaoEnviar.disabled = false;
+        botaoEnviar.querySelector('span:first-child').textContent = 'Pesquisar';
+      }
+    }
+
+    form.addEventListener('submit', event => {
+      event.preventDefault();
+      const pergunta = campo.value.trim();
+      if (!pergunta) return;
+      const consulta = `${pergunta} filme brasileiro cinema nacional`;
+      window.location.href = `https://duckduckgo.com/?q=${encodeURIComponent(consulta)}`;
+    });
+
+    campo.addEventListener('keydown', event => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        form.requestSubmit();
+      }
+    });
+
+    document.querySelectorAll('.sugestao').forEach(botao => {
+      botao.addEventListener('click', () => {
+        campo.value = botao.textContent;
+        form.requestSubmit();
+      });
+    });
+
+    botaoLimpar.addEventListener('click', () => {
+      campo.value = '';
+      areaResposta.hidden = true;
+      conteudoResposta.replaceChildren();
+      fontes.replaceChildren();
+      campo.focus();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  </script>
+</body>
+</html>
